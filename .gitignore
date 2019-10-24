@@ -10,7 +10,7 @@ __pycache__/
 input_data/
 logs/
 datasets/*.pkl
-test.pyl
+test.py
 
 # Distribution / packaging
 .Python
