@@ -13,7 +13,8 @@ from option import Options
 from experiments.OneShotBuilder import OneShotBuilder
 import tqdm
 from logger import Logger
-
+from datasets import omniglot_dataloader
+import os
 '''
 :param batch_size: Experiment batch_size
 :param classes_per_set: Integer indicating the number of classes per set
@@ -29,7 +30,7 @@ classes_per_set = 5
 samples_per_class = 5
 channels = 1
 # Training setup
-total_epochs = 500
+total_epochs = 200
 total_train_batches = 1000
 total_val_batches = 100
 total_test_batches = 250
@@ -42,10 +43,18 @@ LOG_DIR = args.log_dir + '/1_run-batchSize_{}-fce_{}-classes_per_set{}-samples_p
 # create logger
 logger = Logger(LOG_DIR)
 
-data = omniglotNShot.OmniglotNShotDataset(dataroot=args.dataroot, batch_size = batch_size,
-                                          classes_per_set=classes_per_set,
-                                          samples_per_class=samples_per_class)
+# data = omniglotNShot.OmniglotNShotDataset(dataroot=os.path.join("./input_data", args.dataroot), batch_size = batch_size,
+#                                           classes_per_set=classes_per_set,
+#                                           samples_per_class=samples_per_class)
 
+data = omniglot_dataloader.FolderDatasetLoader(num_of_gpus=1, batch_size=args.batch_size, image_height=28, image_width=28,
+                                               image_channels=1,
+                                               train_val_test_split=(1200/1622, 211/1622, 211/1622),
+                                               samples_per_iter=1, num_workers=4,
+                                               data_path=os.path.join("./input_data", args.dataroot), name=args.dataroot,
+                                               indexes_of_folders_indicating_class=[-2, -3], reset_stored_filepaths=False,
+                                               num_samples_per_class=args.samples_per_class,
+                                               num_classes_per_set=args.classes_per_set, label_as_int=False)
 obj_oneShotBuilder = OneShotBuilder(data)
 obj_oneShotBuilder.build_experiment(batch_size, classes_per_set, samples_per_class, channels, fce)
 

@@ -25,7 +25,7 @@ class OneShotBuilder:
         """
         self.data = data
 
-    def build_experiment(self, batch_size, classes_per_set, samples_per_class, channels, fce):
+    def build_experiment(self, batch_size, classes_per_set, samples_per_class, channels, fce, data_augmentation=True):
 
         """
         :param batch_size: The experiment batch size
@@ -50,6 +50,7 @@ class OneShotBuilder:
         self.lr_decay = 1e-6
         self.wd = 1e-4
         self.total_train_iter = 0
+        self.data_augmentation = data_augmentation
         self.isCudaAvailable = torch.cuda.is_available()
         if self.isCudaAvailable:
             cudnn.benchmark = True
@@ -68,14 +69,23 @@ class OneShotBuilder:
         optimizer = self.__create_optimizer(self.matchingNet, self.lr)
 
         with tqdm.tqdm(total=total_train_batches) as pbar:
-            for i in range(total_train_batches):  # train epoch
-                x_support_set, y_support_set, x_target, y_target = \
-                    self.data.get_batch(str_type = 'train',rotate_flag = True)
+            # for i in range(total_train_batches):  # train epoch
+            #     x_support_set, y_support_set, x_target, y_target = \
+            #         self.data.get_batch(str_type = 'train',rotate_flag = True)
+            for sample_id, train_sample in enumerate(self.data.get_train_batches(total_batches=total_train_batches,
+                                                                                 augment_images=self.data_augmentation)):
+                x_support_set, x_target, y_support_set, y_target = train_sample
+                # 这里的shape 是，num_gpus, batch_size, N, K, width, height, channels
+                x_support_set = torch.Tensor(x_support_set[0])
+                y_support_set = torch.LongTensor(y_support_set[0])
+                x_target = torch.Tensor(x_target[0])
+                y_target = torch.LongTensor(y_target[0])
 
-                x_support_set = Variable(torch.from_numpy(x_support_set)).float()
-                y_support_set = Variable(torch.from_numpy(y_support_set),requires_grad=False).long()
-                x_target = Variable(torch.from_numpy(x_target)).float()
-                y_target = Variable(torch.from_numpy(y_target),requires_grad=False).long()
+                #reshape: classes_per_set, samples_per_class to (classes_per_set * samples_per_class)
+                size = x_support_set.size()
+                x_support_set = x_support_set.view(size[0], -1, size[3], size[4], size[5])
+                size = y_support_set.size()
+                y_support_set = y_support_set.view(size[0], -1)
 
                 # y_support_set: Add extra dimension for the one_hot
                 y_support_set = torch.unsqueeze(y_support_set, 2)
@@ -83,6 +93,14 @@ class OneShotBuilder:
                 batch_size = y_support_set.size()[0]
                 y_support_set_one_hot = torch.FloatTensor(batch_size, sequence_length,
                                                                self.classes_per_set).zero_()
+
+                # print("\nAll shape is:")
+                # print("x support:", x_support_set.shape)
+                # print("y support:", y_support_set.shape)
+                # print("x target:", x_target.shape)
+                # print("y target:", y_target.shape)
+                # print("y_support one hot shape:", y_support_set_one_hot.shape)
+
                 y_support_set_one_hot.scatter_(2, y_support_set.data, 1)
                 y_support_set_one_hot = Variable(y_support_set_one_hot)
 
@@ -112,12 +130,12 @@ class OneShotBuilder:
                 # update the optimizer learning rate
                 self.__adjust_learning_rate(optimizer)
 
-                iter_out = "tr_loss: {}, tr_accuracy: {}".format(c_loss_value.data[0], acc.data[0])
+                iter_out = "tr_loss: {}, tr_accuracy: {}".format(c_loss_value.item(), acc.item())
                 pbar.set_description(iter_out)
 
                 pbar.update(1)
-                total_c_loss += c_loss_value.data[0]
-                total_accuracy += acc.data[0]
+                total_c_loss += c_loss_value.item()
+                total_accuracy += acc.item()
 
                 self.total_train_iter += 1
                 if self.total_train_iter % 2000 == 0:
@@ -138,14 +156,19 @@ class OneShotBuilder:
         total_val_accuracy = 0.
 
         with tqdm.tqdm(total=total_val_batches) as pbar:
-            for i in range(total_val_batches):  # validation epoch
-                x_support_set, y_support_set, x_target, y_target = \
-                    self.data.get_batch(str_type='val', rotate_flag=False)
+            for sample_id, val_sample in enumerate(self.data.get_val_batches(total_batches=total_val_batches,
+                                                                                 augment_images=False)):
+                x_support_set, x_target, y_support_set, y_target = val_sample
 
-                x_support_set = Variable(torch.from_numpy(x_support_set), volatile=True).float()
-                y_support_set = Variable(torch.from_numpy(y_support_set), volatile=True).long()
-                x_target = Variable(torch.from_numpy(x_target), volatile=True).float()
-                y_target = Variable(torch.from_numpy(y_target), volatile=True).long()
+                x_support_set = torch.Tensor(x_support_set[0])
+                y_support_set = torch.LongTensor(y_support_set[0])
+                x_target = torch.Tensor(x_target[0])
+                y_target = torch.LongTensor(y_target[0])
+
+                size = x_support_set.size()
+                x_support_set = x_support_set.view(size[0], -1, size[3], size[4], size[5])
+                size = y_support_set.size()
+                y_support_set = y_support_set.view(size[0], -1)
 
                 # y_support_set: Add extra dimension for the one_hot
                 y_support_set = torch.unsqueeze(y_support_set, 2)
@@ -168,12 +191,12 @@ class OneShotBuilder:
                     acc, c_loss_value = self.matchingNet(x_support_set, y_support_set_one_hot,
                                                          x_target, y_target)
 
-                iter_out = "val_loss: {}, val_accuracy: {}".format(c_loss_value.data[0], acc.data[0])
+                iter_out = "val_loss: {}, val_accuracy: {}".format(c_loss_value.item(), acc.item())
                 pbar.set_description(iter_out)
                 pbar.update(1)
 
-                total_val_c_loss += c_loss_value.data[0]
-                total_val_accuracy += acc.data[0]
+                total_val_c_loss += c_loss_value.item()
+                total_val_accuracy += acc.item()
 
         total_val_c_loss = total_val_c_loss / total_val_batches
         total_val_accuracy = total_val_accuracy / total_val_batches
@@ -190,14 +213,19 @@ class OneShotBuilder:
         total_test_c_loss = 0.
         total_test_accuracy = 0.
         with tqdm.tqdm(total=total_test_batches) as pbar:
-            for i in range(total_test_batches):
-                x_support_set, y_support_set, x_target, y_target = \
-                    self.data.get_batch(str_type='test', rotate_flag=False)
+            for sample_id, test_sample in enumerate(self.data.get_test_batches(total_batches=total_test_batches,
+                                                                             augment_images=False)):
+                x_support_set, x_target, y_support_set, y_target = test_sample
 
-                x_support_set = Variable(torch.from_numpy(x_support_set), volatile=True).float()
-                y_support_set = Variable(torch.from_numpy(y_support_set), volatile=True).long()
-                x_target = Variable(torch.from_numpy(x_target), volatile=True).float()
-                y_target = Variable(torch.from_numpy(y_target), volatile=True).long()
+                x_support_set = torch.Tensor(x_support_set[0])
+                y_support_set = torch.LongTensor(y_support_set[0])
+                x_target = torch.Tensor(x_target[0])
+                y_target = torch.LongTensor(y_target[0])
+
+                size = x_support_set.size()
+                x_support_set = x_support_set.view(size[0], -1, size[3], size[4], size[5])
+                size = y_support_set.size()
+                y_support_set = y_support_set.view(size[0], -1)
 
                 # y_support_set: Add extra dimension for the one_hot
                 y_support_set = torch.unsqueeze(y_support_set, 2)
@@ -220,12 +248,12 @@ class OneShotBuilder:
                     acc, c_loss_value = self.matchingNet(x_support_set, y_support_set_one_hot,
                                                          x_target, y_target)
 
-                iter_out = "test_loss: {}, test_accuracy: {}".format(c_loss_value.data[0], acc.data[0])
+                iter_out = "test_loss: {}, test_accuracy: {}".format(c_loss_value.item(), acc.item())
                 pbar.set_description(iter_out)
                 pbar.update(1)
 
-                total_test_c_loss += c_loss_value.data[0]
-                total_test_accuracy += acc.data[0]
+                total_test_c_loss += c_loss_value.item()
+                total_test_accuracy += acc.item()
             total_test_c_loss = total_test_c_loss / total_test_batches
             total_test_accuracy = total_test_accuracy / total_test_batches
         return total_test_c_loss, total_test_accuracy

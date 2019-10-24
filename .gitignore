@@ -9,6 +9,7 @@ __pycache__/
 #Data
 input_data/
 logs/
+datasets/*.pkl
 
 # Distribution / packaging
 .Python

@@ -25,7 +25,7 @@ class OmniglotNShotDataset():
     def __init__(self, dataroot, batch_size = 100, classes_per_set=10, samples_per_class=1):
 
         if not os.path.isfile(os.path.join(dataroot,'data.npy')):
-            self.x = omniglot.OMNIGLOT(dataroot, download=True,
+            self.x = omniglot.OMNIGLOT(dataroot, download=False,
                                      transform=transforms.Compose([filenameToPILImage,
                                                                    PiLImageResize,
                                                                    np_reshape]))
@@ -42,7 +42,7 @@ class OmniglotNShotDataset():
             self.x = [] # Free memory
 
             for classes in temp.keys():
-                self.x.append(np.array(temp[temp.keys()[classes]]))
+                self.x.append(np.array(temp[list(temp.keys())[classes]]))
             self.x = np.array(self.x)
             temp = [] # Free memory
             np.save(os.path.join(dataroot,'data.npy'),self.x)

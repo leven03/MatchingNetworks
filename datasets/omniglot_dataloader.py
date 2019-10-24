@@ -287,15 +287,21 @@ class MatchingNetworkDatasetParallel(Dataset):
         support_set_images = np.array(support_set_images, dtype=np.float32)
         support_set_labels = np.array(support_set_labels, dtype=np.int32)
 
-        target_sample = rng.choice(self.dataset_size_dict[dataset_name][target_class], size=1,
-                                         replace=True)[0]
-        choose_samples = self.datasets[dataset_name][target_class][target_sample]
-        target_set_image = self.load_batch([choose_samples])[0]
-        if augment_images is True:
-            k = k_dict[target_class]
-            target_set_image = augment_image(image=target_set_image, k=k * 90, channels=self.image_channel)
-        target_set_label = int(class_to_episode_label[target_class])
+        target_sample_list = rng.choice(self.dataset_size_dict[dataset_name][target_class], size=1,
+                                         replace=True)
+        target_set_image = []
+        target_set_label = []
+        for target_sample in target_sample_list:
+            choose_samples = self.datasets[dataset_name][target_class][target_sample]
+            x_class_data = self.load_batch([choose_samples])[0]
+            if augment_images is True:
+                k = k_dict[target_class]
+                x_class_data = augment_image(image=x_class_data, k=k * 90, channels=self.image_channel)
+            target_set_image.append(x_class_data)
+            target_set_label.append(int(class_to_episode_label[target_class]))
 
+        target_set_image = np.array(target_set_image, dtype=np.float32)
+        target_set_label = np.array(target_set_label, dtype=np.int32)
         return support_set_images, target_set_image, support_set_labels, target_set_label
 
     def __len__(self):
@@ -371,7 +377,6 @@ class MatchingNetworkLoader(object):
         self.total_train_iters_produced += self.dataset.data_length["train"]
         for sample_id, sample_batched in enumerate(self.get_dataloader(shuffle=True)):
             preprocess_sample = self.sample_iter_data(sample=sample_batched, num_gpus=self.dataset.num_of_gpus,
-                                                      samples_per_iter=self.batches_per_iter,
                                                       batch_size=self.dataset.batch_size)
             yield preprocess_sample
 
@@ -384,7 +389,6 @@ class MatchingNetworkLoader(object):
         self.dataset.set_augmentation(augment_images=augment_images)
         for sample_id, sample_batched in enumerate(self.get_dataloader(shuffle=False)):
             preprocess_sample = self.sample_iter_data(sample=sample_batched, num_gpus=self.dataset.num_of_gpus,
-                                                      samples_per_iter=self.batches_per_iter,
                                                       batch_size=self.dataset.batch_size)
             yield preprocess_sample
 
@@ -397,24 +401,21 @@ class MatchingNetworkLoader(object):
         self.dataset.set_augmentation(augment_images=augment_images)
         for sample_id, sample_batched in enumerate(self.get_dataloader(shuffle=False)):
             preprocess_sample = self.sample_iter_data(sample=sample_batched, num_gpus=self.dataset.num_of_gpus,
-                                                      samples_per_iter=self.batches_per_iter,
                                                       batch_size=self.dataset.batch_size)
             yield preprocess_sample
 
 
-    def sample_iter_data(self, sample, num_gpus, batch_size, samples_per_iter):
+    def sample_iter_data(self, sample, num_gpus, batch_size):
         output_sample = []
         for key in sample.keys():
             sample[key] = np.array(sample[key].numpy(), dtype=np.float32)
             new_shape = []
             curr_id = 1
 
-            for i in range(len(sample[key].shape) + 2):
+            for i in range(len(sample[key].shape) + 1):
                 if i == 0:
-                    new_shape.append(samples_per_iter)
-                elif i == 1:
                     new_shape.append(num_gpus)
-                elif i == 2:
+                elif i == 1:
                     new_shape.append(batch_size)
                 else:
                     new_shape.append(sample[key].shape[curr_id])

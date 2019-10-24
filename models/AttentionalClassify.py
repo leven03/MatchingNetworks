@@ -24,7 +24,7 @@ class AttentionalClassify(nn.Module):
                                                                             [sequence_length,  batch_size, num_classes]
         :return: Softmax pdf
         """
-        softmax = nn.Softmax()
+        softmax = nn.Softmax(dim=1)
         softmax_similarities = softmax(similarities)
         preds = softmax_similarities.unsqueeze(1).bmm(support_set_y).squeeze()
         return preds
